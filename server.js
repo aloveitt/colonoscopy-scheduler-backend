@@ -13,7 +13,7 @@ const openai = new OpenAI({
 
 // CORS configuration
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://*.netlify.app', 'https://*.onrender.com'],
+  origin: ['http://localhost:3000', 'https://*.netlify.app', 'https://peaceful-khapse-24ced0.netlify.app/', 'https://*.onrender.com'],
   methods: ['GET', 'POST'],
   credentials: true
 }));
