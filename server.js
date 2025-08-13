@@ -1,4 +1,4 @@
-// server.js - Secure Production Version
+// server.js - Improved AI Logic
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
@@ -8,7 +8,7 @@ const port = process.env.PORT || 3001;
 
 // Initialize OpenAI with environment variable (SECURE)
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY // This gets the key from Render's environment variables
+  apiKey: process.env.OPENAI_API_KEY
 });
 
 // CORS configuration
@@ -35,7 +35,51 @@ app.post('/api/chat', async (req, res) => {
     const { message, context } = req.body;
     
     console.log('Received message:', message);
-    console.log('Available appointments count:', context.availableDates?.length || 0);
+    console.log('Current step:', context.currentStep);
+    console.log('Patient info:', context.patientInfo);
+    
+    // Filter appointments based on user request
+    let filteredDates = context.availableDates || [];
+    
+    // Check if user is asking for specific doctor
+    const doctorKeywords = {
+      'kelly': 'Dr. Kelly',
+      'loveitt': 'Dr. Loveitt', 
+      'lemieur': 'Dr. LeMieur',
+      'roberts': 'Dr. Roberts'
+    };
+    
+    const lowerMessage = message.toLowerCase();
+    for (const [keyword, doctorName] of Object.entries(doctorKeywords)) {
+      if (lowerMessage.includes(keyword)) {
+        filteredDates = filteredDates.filter(d => d.doctor === doctorName);
+        break;
+      }
+    }
+    
+    // Check if user is asking for specific month
+    if (lowerMessage.includes('september') || lowerMessage.includes('sept')) {
+      filteredDates = filteredDates.filter(d => {
+        const date = new Date(d.date);
+        return date.getMonth() === 8; // September is month 8 (0-indexed)
+      });
+    }
+    
+    if (lowerMessage.includes('october') || lowerMessage.includes('oct')) {
+      filteredDates = filteredDates.filter(d => {
+        const date = new Date(d.date);
+        return date.getMonth() === 9; // October is month 9
+      });
+    }
+    
+    // Check for time preferences
+    if (lowerMessage.includes('morning') || lowerMessage.includes('am')) {
+      filteredDates = filteredDates.filter(d => d.period === 'AM');
+    }
+    
+    if (lowerMessage.includes('afternoon') || lowerMessage.includes('evening') || lowerMessage.includes('pm')) {
+      filteredDates = filteredDates.filter(d => d.period === 'PM');
+    }
     
     const systemPrompt = `You are a friendly, professional colonoscopy scheduling assistant for a hospital. 
 
@@ -46,32 +90,31 @@ SCHEDULING RULES:
 - Dr. Kelly: Tuesday PM/Wednesday PM/Friday PM (12:00-5:00), 20 mins per procedure, max 8 per block
 - Dr. Roberts: Tuesday AM/Thursday PM/Friday PM, 15 mins per procedure, max 10 per block
 
-CURRENT AVAILABLE APPOINTMENTS:
-${JSON.stringify(context.availableDates, null, 2)}
-
-BOOKING PROCESS:
-1. Help them find appointments based on their preference (date, doctor, or next available)
-2. Once they select an appointment, collect their full name, phone number, and email
-3. Confirm all details before booking
+FILTERED AVAILABLE APPOINTMENTS BASED ON USER REQUEST:
+${JSON.stringify(filteredDates, null, 2)}
 
 CURRENT CONVERSATION STATE:
 - Booking step: ${context.currentStep}
 - Patient info collected: ${JSON.stringify(context.patientInfo)}
 - Selected appointment: ${JSON.stringify(context.selectedDate)}
 
-RESPONSE GUIDELINES:
-- Be conversational and helpful
-- When showing appointments, mention it's either AM (7:30-12:00) or PM (12:00-5:00)
-- Exact appointment times are given the day before the procedure
-- If they ask for a specific date or doctor, check the available appointments list
-- If they select an appointment, guide them to provide their information step by step
-- Always mention the 3-day advance booking requirement if they ask for something too soon
-- Keep responses concise but friendly
+IMPORTANT INSTRUCTIONS:
+1. If the user asks for a specific doctor, month, or time preference, ONLY show appointments that match their request
+2. If user asks for September and there are September appointments in the filtered list, show them
+3. If the user has already provided their name, phone, and email, do NOT ask for this information again
+4. If they have selected an appointment and provided all info, offer to confirm the booking
+5. Be direct and helpful - don't repeat questions unnecessarily
 
-If the user is asking to book a specific appointment or wants to see appointments, make sure to reference the available appointments list provided above.`;
+CONVERSATION FLOW:
+1. User asks for appointments → Show appropriate filtered appointments
+2. User selects appointment → Collect missing info (name, phone, email) 
+3. All info collected → Offer confirmation
+4. User confirms → Appointment is booked
+
+Be conversational but efficient. If the user has given you what you need, move to the next step.`;
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Using the more cost-effective model
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message }
@@ -82,18 +125,31 @@ If the user is asking to book a specific appointment or wants to see appointment
 
     const aiResponse = completion.choices[0].message.content;
     
-    console.log('AI Response length:', aiResponse.length);
+    console.log('AI Response:', aiResponse);
+    
+    // Determine if we should show appointments
+    let showAppointments = false;
+    
+    if (filteredDates.length > 0 && (
+      aiResponse.toLowerCase().includes('available') ||
+      aiResponse.toLowerCase().includes('appointments') ||
+      aiResponse.toLowerCase().includes('here are') ||
+      aiResponse.toLowerCase().includes('options')
+    )) {
+      showAppointments = true;
+    }
     
     res.json({ 
       response: aiResponse,
       success: true,
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
+      showAppointments: showAppointments,
+      filteredDates: showAppointments ? filteredDates : []
     });
 
   } catch (error) {
     console.error('OpenAI API Error:', error);
     
-    // More detailed error handling
     let errorMessage = 'Sorry, I had trouble processing that. Please try again.';
     
     if (error.code === 'invalid_api_key') {
