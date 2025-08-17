@@ -37,6 +37,121 @@ app.get('/', (req, res) => {
   });
 });
 
+// Voice endpoint for Vapi integration
+app.post('/api/voice', async (req, res) => {
+  try {
+    const { message, context = {} } = req.body;
+    
+    console.log('Voice call received:', message);
+    
+    // Use the same AI logic as the chat endpoint
+    let filteredDates = context.availableDates || [];
+    
+    // Apply same filtering logic
+    const doctorKeywords = {
+      'kelly': 'Dr. Kelly',
+      'loveitt': 'Dr. Loveitt', 
+      'lemieur': 'Dr. LeMieur',
+      'roberts': 'Dr. Roberts'
+    };
+    
+    const lowerMessage = message.toLowerCase();
+    for (const [keyword, doctorName] of Object.entries(doctorKeywords)) {
+      if (lowerMessage.includes(keyword)) {
+        filteredDates = filteredDates.filter(d => d.doctor === doctorName);
+        break;
+      }
+    }
+    
+    // Month filtering
+    if (lowerMessage.includes('september') || lowerMessage.includes('sept')) {
+      filteredDates = filteredDates.filter(d => {
+        const date = new Date(d.date);
+        return date.getMonth() === 8;
+      });
+    }
+    
+    if (lowerMessage.includes('october') || lowerMessage.includes('oct')) {
+      filteredDates = filteredDates.filter(d => {
+        const date = new Date(d.date);
+        return date.getMonth() === 9;
+      });
+    }
+    
+    // Time filtering
+    if (lowerMessage.includes('morning') || lowerMessage.includes('am')) {
+      filteredDates = filteredDates.filter(d => d.period === 'AM');
+    }
+    
+    if (lowerMessage.includes('afternoon') || lowerMessage.includes('evening') || lowerMessage.includes('pm')) {
+      filteredDates = filteredDates.filter(d => d.period === 'PM');
+    }
+
+    const voiceSystemPrompt = `You are a friendly, professional phone assistant for Cuyuna Regional Medical Center in Crosby, Minnesota, helping patients schedule colonoscopy appointments.
+
+IMPORTANT VOICE GUIDELINES:
+- Keep responses concise and conversational for phone calls
+- Speak naturally, as if talking to someone on the phone
+- Don't mention clicking or visual elements
+- When listing appointments, speak them clearly one at a time
+- Always confirm information by repeating it back to the patient
+- If they want to book, collect: name, phone number, and date preference
+- For complex requests, offer to transfer to a human scheduler
+
+ABOUT CRMC:
+- Located in beautiful Crosby, Minnesota, serving the Brainerd Lakes Area
+- One of America's 100 Best Hospitals for Patient Experience
+- Expert colonoscopy services with experienced physicians
+- All procedures use propofol sedation for comfort
+
+AVAILABLE APPOINTMENTS:
+${filteredDates.length > 0 ? JSON.stringify(filteredDates.slice(0, 5), null, 2) : 'Please call our scheduling department for current availability'}
+
+CONVERSATION STATE:
+- Current step: ${context.currentStep || 'greeting'}
+- Patient info: ${JSON.stringify(context.patientInfo || {})}
+
+PHONE SCRIPT GUIDELINES:
+- Always end with "Is there anything else I can help you with today?"
+- If asked about preparation, mention they'll receive detailed instructions
+- For urgent questions, offer to transfer to our nursing staff
+- Our main number is 218-546-7000 if they need to call back
+
+Keep responses under 100 words and speak naturally for a phone conversation.`;
+
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: voiceSystemPrompt },
+        { role: "user", content: message }
+      ],
+      max_tokens: 200, // Shorter for voice
+      temperature: 0.7
+    });
+
+    const aiResponse = completion.choices[0].message.content;
+    
+    console.log('Voice AI Response:', aiResponse);
+    
+    // Format response for Vapi
+    res.json({
+      message: aiResponse,
+      success: true,
+      // Include appointment data if relevant
+      appointments: filteredDates.length > 0 ? filteredDates.slice(0, 5) : [],
+      shouldTransfer: aiResponse.toLowerCase().includes('transfer') || aiResponse.toLowerCase().includes('speak to someone')
+    });
+
+  } catch (error) {
+    console.error('Voice API Error:', error);
+    res.json({
+      message: "I'm having trouble right now. Let me transfer you to our scheduling department. Please hold.",
+      success: false,
+      shouldTransfer: true
+    });
+  }
+});
+
 // Main chat endpoint
 app.post('/api/chat', async (req, res) => {
   try {
