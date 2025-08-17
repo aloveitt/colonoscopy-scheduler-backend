@@ -1,4 +1,4 @@
-// server.js - Improved AI Logic
+// server.js - Final Version with CORS Fix
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
@@ -11,19 +11,27 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// CORS configuration
+// CORS configuration - FIXED
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://*.netlify.app', 'https://*.onrender.com'],
-  methods: ['GET', 'POST'],
+  origin: [
+    'http://localhost:3000',
+    'https://peaceful-khapse-24ced0.netlify.app',
+    'https://*.netlify.app'
+  ],
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
   credentials: true
 }));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
 
 app.use(express.json({ limit: '10mb' }));
 
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({ 
-    message: 'Colonoscopy Scheduler API is running!',
+    message: 'Cuyuna Regional Medical Center Scheduling API is running!',
     status: 'healthy',
     timestamp: new Date().toISOString()
   });
@@ -216,4 +224,9 @@ app.listen(port, () => {
   console.log(`Server running on port ${port}`);
   console.log(`Health check: http://localhost:${port}/`);
   console.log(`API endpoint: http://localhost:${port}/api/chat`);
+  console.log('CORS enabled for:', [
+    'http://localhost:3000',
+    'https://peaceful-khapse-24ced0.netlify.app',
+    'https://*.netlify.app'
+  ]);
 });
